@@ -205,7 +205,9 @@ class Wav2Vec2Config(PretrainedConfig):
 
     def __init__(
         self,
-        vocab_size=232,
+        vocab_size=32,
+        vocab_size_1 = 121,
+        vocab_size_2 = 314,
         hidden_size=768,
         num_hidden_layers=12,
         num_attention_heads=12,
@@ -289,6 +291,8 @@ class Wav2Vec2Config(PretrainedConfig):
         self.layer_norm_eps = layer_norm_eps
         self.initializer_range = initializer_range
         self.vocab_size = vocab_size
+        self.vocab_size_1 = vocab_size_1
+        self.vocab_size_2 = vocab_size_2
         self.do_stable_layer_norm = do_stable_layer_norm
         self.use_weighted_layer_sum = use_weighted_layer_sum
 

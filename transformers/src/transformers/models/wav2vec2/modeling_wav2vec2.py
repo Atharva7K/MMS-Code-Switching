@@ -706,7 +706,7 @@ class Wav2Vec2EncoderLayer(nn.Module):
 
         return outputs
 
-    
+
 class Wav2Vec2EncoderLayerStableLayerNorm(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -743,65 +743,6 @@ class Wav2Vec2EncoderLayerStableLayerNorm(nn.Module):
 
         if self.adapter_layer is not None:
             hidden_states = hidden_states + self.adapter_layer(hidden_states)
-
-        outputs = (hidden_states,)
-
-        if output_attentions:
-            outputs += (attn_weights,)
-
-        return outputs
-    
-
-class Wav2Vec2EncoderLayerStableLayerNormForCodeSwitching(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.attention = Wav2Vec2Attention(
-            embed_dim=config.hidden_size,
-            num_heads=config.num_attention_heads,
-            dropout=config.attention_dropout,
-            is_decoder=False,
-        )
-        self.dropout = nn.Dropout(config.hidden_dropout)
-        self.layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.feed_forward = Wav2Vec2FeedForward(config)
-        self.final_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-
-        if getattr(config, 'do_code_switching') is True:
-            if getattr(config, "code_switch_between", None) is not None:
-                self.adapter_layer_1 = Wav2Vec2AttnAdapterLayer(config)
-                self.adapter_layer_2 = Wav2Vec2AttnAdapterLayer(config)
-            else:
-                raise("""Specify languages to code-switch between using code_switch_between attribute. 
-                      Ex code_switch_between = ('fra', 'ara')""")
-            if getattr(config, "adapter_attn_dim", None) is  None:
-                raise("""adapter_attn_dim must be set to do code-switching""")
-   
-        if getattr(config, "do_code_switching") is False and getattr(config, "adapter_attn_dim", None) is not None:
-            self.adapter_layer = Wav2Vec2AttnAdapterLayer(config)
-        else:
-            self.adapter_layer = None
-
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        code_switch_sequence,
-        attention_mask: Optional[torch.Tensor] = None,
-        output_attentions: bool = False,
-    ):
-        attn_residual = hidden_states
-        hidden_states = self.layer_norm(hidden_states)
-        hidden_states, attn_weights, _ = self.attention(
-            hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
-        )
-        hidden_states = self.dropout(hidden_states)
-        hidden_states = attn_residual + hidden_states
-        hidden_states = hidden_states + self.feed_forward(self.final_layer_norm(hidden_states))
-
-        if self.adapter_layer is not None:
-            hidden_states = hidden_states + self.adapter_layer(hidden_states)
-
-        if self.adapter_layer_1 is not None and self.adapter_layer_2 is not None:
-                hidden_states = hidden_states + (code_switch_sequence * self.adapter_layer_2(hidden_states) + (1-code_switch_sequence) * self.adapter_layer_1(hidden_states))
 
         outputs = (hidden_states,)
 
@@ -897,33 +838,44 @@ class Wav2Vec2Encoder(nn.Module):
             attentions=all_self_attentions,
         )
 
-class CodeSwitcherFeedForward(nn.Module):
-    def __init__(self, config):
+class Wav2Vec2PreAdapterSwitching(nn.Module):
+    def __init__(self, in_features=1280, out_features=1):
         super().__init__()
+
+        self.linear = nn.Linear(in_features=in_features, out_features=out_features)
         self.sigmoid = nn.Sigmoid()
-        self.intermediate_dropout = nn.Dropout(config.activation_dropout)
+    def forward(self, x):
+        out = self.sigmoid(self.linear(x))
+    
+        return out >= 0.5
 
-        self.intermediate_dense = nn.Linear(config.hidden_size, config.intermediate_size)
-        if isinstance(config.hidden_act, str):
-            self.intermediate_act_fn = ACT2FN[config.hidden_act]
-        else:
-            self.intermediate_act_fn = config.hidden_act
+class Wav2Vec2PostAdapterSwitching(nn.Module):
+    def __init__(self, config):
+        """
+        Implements adapter modules directly with 3D tensor weight as parameters and without using ModuleList to speed
+        up training throughput.
+        """
+        super().__init__()
+        self.input_dim = config.adapter_attn_dim
+        self.hidden_dim_in = config.hidden_size * 2
+        self.hidden_dim_out = config.hidden_size
 
-        self.output_dense = nn.Linear(config.intermediate_size, 1)
+        self.norm = nn.LayerNorm(self.hidden_dim_in)
+        self.linear_1 = nn.Linear(self.hidden_dim_in, self.input_dim)
+        self.act_fn = nn.ReLU()
+        self.linear_2 = nn.Linear(self.input_dim, self.hidden_dim_out)
 
-    def forward(self, hidden_states):
-        hidden_states = self.intermediate_dense(hidden_states)
-        hidden_states = self.intermediate_act_fn(hidden_states)
-        hidden_states = self.intermediate_dropout(hidden_states)
+    def forward(self, hidden_states: torch.FloatTensor):
+        hidden_states = self.norm(hidden_states)
 
-        hidden_states = self.output_dense(hidden_states)
-        out = self.sigmoid(hidden_states)
-        out = (out >= 0.5)
-        out_int = out.long()
-        out_int = out_int.repeat(1, 1, 1280)
-        return out_int
+        hidden_states = self.linear_1(hidden_states)
+        hidden_states = self.act_fn(hidden_states)
+        hidden_states = self.linear_2(hidden_states)
 
-class TransformerCodeSwitcher(nn.Module):
+        return hidden_states
+
+
+class Wav2Vec2EncoderLayerStableLayerNormForCodeSwitching(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.attention = Wav2Vec2Attention(
@@ -934,8 +886,29 @@ class TransformerCodeSwitcher(nn.Module):
         )
         self.dropout = nn.Dropout(config.hidden_dropout)
         self.layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.feed_forward = CodeSwitcherFeedForward(config)
+        self.feed_forward = Wav2Vec2FeedForward(config)
         self.final_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.adapter_switching_type = config.adapter_switching_type
+
+        if self.adapter_switching_type == 'pre':
+            self.code_switcher = Wav2Vec2PreAdapterSwitching(config)
+        elif self.adapter_switching_type == 'post':
+            self.code_switcher = Wav2Vec2PostAdapterSwitching(config)
+
+        if getattr(config, 'do_code_switching') is True:
+            if getattr(config, "code_switch_between", None) is not None:
+                self.adapter_layer_1 = Wav2Vec2AttnAdapterLayer(config)
+                self.adapter_layer_2 = Wav2Vec2AttnAdapterLayer(config)
+            else:
+                raise("""Specify languages to code-switch between using code_switch_between attribute. 
+                      Ex code_switch_between = ('fra', 'ara')""")
+            if getattr(config, "adapter_attn_dim", None) is  None:
+                raise("""adapter_attn_dim must be set to do code-switching""")
+   
+        if getattr(config, "do_code_switching") is False and getattr(config, "adapter_attn_dim", None) is not None:
+            self.adapter_layer = Wav2Vec2AttnAdapterLayer(config)
+        else:
+            self.adapter_layer = None
 
     def forward(
         self,
@@ -950,14 +923,32 @@ class TransformerCodeSwitcher(nn.Module):
         )
         hidden_states = self.dropout(hidden_states)
         hidden_states = attn_residual + hidden_states
-        hidden_states = self.feed_forward(hidden_states)
+        hidden_states = hidden_states + self.feed_forward(self.final_layer_norm(hidden_states))
+
+        if self.adapter_layer is not None:
+            hidden_states = hidden_states + self.adapter_layer(hidden_states)
+
+        if self.adapter_layer_1 is not None and self.adapter_layer_2 is not None:
+
+            if self.adapter_switching_type == 'pre':
+                use_adapter_1 = self.code_switcher(hidden_states)
+                # print('use_adapter_1', use_adapter_1, use_adapter_1.shape)
+                if use_adapter_1:
+                    hidden_states = hidden_states + self.adapter_layer_1(hidden_states)
+                else:
+                    hidden_states = hidden_states + self.adapter_layer_2(hidden_states)
+
+            elif self.adapter_switching_type == 'post':
+                adapter_out_1 = self.adapter_layer_1(hidden_states)
+                adapter_out_2 = self.adapter_layer_2(hidden_states)
+                hidden_states = hidden_states + self.code_switcher(torch.cat([adapter_out_1, adapter_out_2], dim=2))
+
         outputs = (hidden_states,)
 
         if output_attentions:
             outputs += (attn_weights,)
 
         return outputs
-
 
 class Wav2Vec2EncoderStableLayerNorm(nn.Module):
     def __init__(self, config):
@@ -966,9 +957,8 @@ class Wav2Vec2EncoderStableLayerNorm(nn.Module):
         self.pos_conv_embed = Wav2Vec2PositionalConvEmbedding(config)
         self.layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout)
-        self.code_switcher = TransformerCodeSwitcher(config)
-        if config.do_code_switching:
 
+        if config.do_code_switching:
             self.layers = nn.ModuleList(
                 [Wav2Vec2EncoderLayerStableLayerNormForCodeSwitching(config) for _ in range(config.num_hidden_layers)]
             )
@@ -1006,8 +996,6 @@ class Wav2Vec2EncoderStableLayerNorm(nn.Module):
         hidden_states = hidden_states + position_embeddings
         hidden_states = self.dropout(hidden_states)
 
-        code_switch_sequence = self.code_switcher(
-                        hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)[0]
         deepspeed_zero3_is_enabled = is_deepspeed_zero3_enabled()
 
         for layer in self.layers:
@@ -1032,12 +1020,11 @@ class Wav2Vec2EncoderStableLayerNorm(nn.Module):
                     layer_outputs = torch.utils.checkpoint.checkpoint(
                         create_custom_forward(layer),
                         hidden_states,
-                        code_switch_sequence,
                         attention_mask,
                     )
                 else:
                     layer_outputs = layer(
-                        hidden_states, code_switch_sequence, attention_mask=attention_mask, output_attentions=output_attentions, 
+                        hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
                     )
                 hidden_states = layer_outputs[0]
 
@@ -1059,6 +1046,7 @@ class Wav2Vec2EncoderStableLayerNorm(nn.Module):
             hidden_states=all_hidden_states,
             attentions=all_self_attentions,
         )
+
 
 
 class Wav2Vec2GumbelVectorQuantizer(nn.Module):
@@ -1330,6 +1318,7 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
 
         adapter_weights_1 = {}
         adapter_weights_2 = {}
+        lm_head_weights = {}
         for name, module in self.named_modules():
             if isinstance(module, Wav2Vec2AttnAdapterLayer):
                 if 'adapter_layer_1' in name:
@@ -1340,7 +1329,12 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
                         for param_name, param in module.named_parameters():
                             adapter_weights_2[".".join([name, param_name])] = param
 
-        return adapter_weights_1, adapter_weights_2
+
+        if isinstance(self, Wav2Vec2ForCTCWithAdapterSwitching):
+            for name, param in self.lm_head.named_parameters():
+                lm_head_weights[".".join(["lm_head", name])] = param
+
+        return adapter_weights_1, adapter_weights_2, lm_head_weights
 
 
     def init_adapter_layers(self):
@@ -1358,6 +1352,10 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
         if isinstance(self, Wav2Vec2ForCTCWithAdapterSwitching):
             self._init_weights(self.lm_head)
 
+    def init_code_switched_adapter_layers(self):
+        for module in self.modules():
+            if isinstance(module, Wav2Vec2PostAdapterSwitching):
+                self._init_weights(module)
 
     def load_adapter(self, target_lang: str, force_load=True, **kwargs):
         r"""
@@ -1383,7 +1381,7 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
                 'http://hostname': 'foo.bar:4012'}`. The proxies are used on each request.
             local_files_only(`bool`, *optional*, defaults to `False`):
                 Whether or not to only look at local files (i.e., do not try to download the model).
-            use_auth_token (`str` or `bool`, *optional*):
+            token (`str` or `bool`, *optional*):
                 The token to use as HTTP bearer authorization for remote files. If `True`, or not specified, will use
                 the token generated when running `huggingface-cli login` (stored in `~/.huggingface`).
             revision (`str`, *optional*, defaults to `"main"`):
@@ -1426,7 +1424,7 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
             raise ValueError(f"Cannot load_adapter for {target_lang} if `config.adapter_attn_dim` is not defined.")
 
         if target_lang == self.target_lang and not force_load:
-            logger.warn(f"Adapter weights are already set to {target_lang}.")
+            logger.warning(f"Adapter weights are already set to {target_lang}.")
             return
 
         cache_dir = kwargs.pop("cache_dir", None)
@@ -1434,9 +1432,20 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
         resume_download = kwargs.pop("resume_download", False)
         proxies = kwargs.pop("proxies", None)
         local_files_only = kwargs.pop("local_files_only", False)
+        token = kwargs.pop("token", None)
         use_auth_token = kwargs.pop("use_auth_token", None)
         revision = kwargs.pop("revision", None)
         use_safetensors = kwargs.pop("use_safetensors", None if is_safetensors_available() else False)
+
+        if use_auth_token is not None:
+            warnings.warn(
+                "The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers.", FutureWarning
+            )
+            if token is not None:
+                raise ValueError(
+                    "`token` and `use_auth_token` are both specified. Please set only the argument `token`."
+                )
+            token = use_auth_token
 
         model_path_or_id = self.config._name_or_path
         state_dict = None
@@ -1453,7 +1462,7 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
                     resume_download=resume_download,
                     proxies=proxies,
                     local_files_only=local_files_only,
-                    use_auth_token=use_auth_token,
+                    token=token,
                     revision=revision,
                     cache_dir=cache_dir,
                 )
@@ -1488,7 +1497,7 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
                     resume_download=resume_download,
                     proxies=proxies,
                     local_files_only=local_files_only,
-                    use_auth_token=use_auth_token,
+                    token=token,
                     revision=revision,
                     cache_dir=cache_dir,
                 )
@@ -1533,7 +1542,31 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
         # set target language corectly
         self.target_lang = target_lang
 
-    def load_adapters_for_code_switching(self, target_lang_1 = 'ara', target_lang_2 = 'eng', force_load=True, vocab_size = 232, **kwargs):
+
+    def merge_lm_head_params(self, adapter_1_params, adapter_2_params):
+        self.lm_head.weight.requires_grad = False
+        self.lm_head.bias.requires_grad = False
+
+        for i in (adapter_1_params, adapter_2_params):
+            i['lm_head.weight'].requires_grad = False
+            i['lm_head.bias'].requires_grad = False
+        
+        vocab_size_1 = adapter_1_params['lm_head.weight'].shape[0]
+        
+        self.lm_head.weight[:vocab_size_1, :] = adapter_1_params['lm_head.weight']
+        self.lm_head.weight[vocab_size_1:, :] = adapter_2_params['lm_head.weight']
+        self.lm_head.bias[:vocab_size_1] = adapter_1_params['lm_head.bias']
+        self.lm_head.bias[vocab_size_1:] = adapter_2_params['lm_head.bias']
+
+        del adapter_1_params['lm_head.weight']
+        del adapter_1_params['lm_head.bias']
+        del adapter_2_params['lm_head.weight']
+        del adapter_2_params['lm_head.bias']
+
+        self.lm_head.weight.requires_grad = True
+        self.lm_head.bias.requires_grad = True
+
+    def load_adapters_for_code_switching(self, target_lang_1 = 'eng', target_lang_2 = 'ara', force_load=True, **kwargs):
 
         if self.config.do_code_switching is False:
             raise ValueError(f"Cannot load code switching adapters if `config.do_adapter_switching` is set to False.")
@@ -1647,21 +1680,38 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
                     f" same name. Otherwise, make sure '{model_path_or_id}' is the correct path to a"
                     f" directory containing a file named {filepath1}."
                 )
+            
+        actual_vocab_size_1 = state_dict_1["lm_head.weight"].shape[0]
+        actual_vocab_size_2 = state_dict_2["lm_head.weight"].shape[0]
+        
+        # print(f'vocab sizes : {actual_vocab_size_1} {actual_vocab_size_2}')
+
+        if actual_vocab_size_1 != self.config.vocab_size_1 or actual_vocab_size_2 != self.config.vocab_size_2:
+            # print(f'vocab sizes inside load adapters {actual_vocab_size_1}, {actual_vocab_size_2}')
+            self.config.vocab_size_1 = actual_vocab_size_1
+            self.config.vocab_size_2 = actual_vocab_size_2
+
+        if self.lm_head.weight.shape[0] != actual_vocab_size_1 + actual_vocab_size_2:
+            # print('yooooooo')
+            self.lm_head = nn.Linear(self.config.output_hidden_size, actual_vocab_size_1 + actual_vocab_size_2)
 
         state_dict_1 = {k.replace('adapter_layer', 'adapter_layer_1') : v for k,v in state_dict_1.items()}
         state_dict_2 = {k.replace('adapter_layer', 'adapter_layer_2') : v for k,v in state_dict_2.items()}
+        # state_dict_lm_head = 
+        # state_dict_1 = {k.replace('lm_head', 'lm_head_1') : v for k,v in state_dict_1.items()}
+        # state_dict_2 = {k.replace('lm_head', 'lm_head_2') : v for k,v in state_dict_2.items()}
 
-        del state_dict_1['lm_head.weight']
-        del state_dict_1['lm_head.bias']
-        del state_dict_2['lm_head.weight']
-        del state_dict_2['lm_head.bias']
 
-        adapter_weights_1, adapter_weights_2  = self._get_code_switched_adapters()
-
-        unexpected_keys_1 = set(state_dict_1.keys()) - set(adapter_weights_1.keys())
-        unexpected_keys_2 = set(state_dict_2.keys()) - set(adapter_weights_2.keys())
-        missing_keys_1 = set(adapter_weights_1.keys()) - set(state_dict_1.keys())
-        missing_keys_2 = set(adapter_weights_2.keys()) - set(state_dict_2.keys())
+        adapter_weights_1, adapter_weights_2, lm_head_weights  = self._get_code_switched_adapters()
+        # for i in adapter_weights_1.keys():
+        #     print(i)
+        # print('==================')
+        # for i in state_dict_1.keys():
+        #     print(i)
+        unexpected_keys_1 = set(state_dict_1.keys()) - set(adapter_weights_1.keys()) - set(lm_head_weights.keys())
+        unexpected_keys_2 = set(state_dict_2.keys()) - set(adapter_weights_2.keys()) - set(lm_head_weights.keys())
+        missing_keys_1 = set(adapter_weights_1.keys()) - set(state_dict_1.keys()) - set(lm_head_weights.keys())
+        missing_keys_2 = set(adapter_weights_2.keys()) - set(state_dict_2.keys()) - set(lm_head_weights.keys())
 
         if len(unexpected_keys_1) > 0:
             raise ValueError(f"The adapter weights {weight_path_1} has unexpected keys: {', '.join(unexpected_keys_1)}.")
@@ -1673,16 +1723,16 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
         elif len(missing_keys_2) > 0:
             raise ValueError(f"The adapter weights {weight_path_2} has missing keys: {', '.join(missing_keys_2)}.")
         
+        self.merge_lm_head_params(state_dict_1, state_dict_2)
 
         state_dict_1 = {k: v.to(adapter_weights_1[k]) for k, v in state_dict_1.items()}
         state_dict_2 = {k: v.to(adapter_weights_2[k]) for k, v in state_dict_2.items()}
+        
         self.load_state_dict(state_dict_1, strict=False)
         self.load_state_dict(state_dict_2, strict=False)
 
         self.target_lang_1 = target_lang_1
         self.target_lang_2 = target_lang_2
-
-
 
 
 
@@ -1869,6 +1919,7 @@ class Wav2Vec2Model(Wav2Vec2PreTrainedModel):
         hidden_states = self._mask_hidden_states(
             hidden_states, mask_time_indices=mask_time_indices, attention_mask=attention_mask
         )
+
         encoder_outputs = self.encoder(
             hidden_states,
             attention_mask=attention_mask,
@@ -2336,8 +2387,8 @@ class Wav2Vec2ForCTCWithAdapterSwitching(Wav2Vec2PreTrainedModel):
         output_hidden_size = (
             config.output_hidden_size if hasattr(config, "do_adapter_switching") and config.do_adapter_switching else config.hidden_size
         )
-        print(f'vocab size ===== {config.vocab_size}')
-        self.lm_head = nn.Linear(output_hidden_size, config.vocab_size)
+        # print(f'vocab sizes====== {config.vocab_size_1}, {config.vocab_size_2}')
+        self.lm_head = nn.Linear(output_hidden_size, config.vocab_size_2 + config.vocab_size_1)
         # Initialize weights and apply final processing
         # print('lm_head shape', self.lm_head.weight.shape)
         self.post_init()
@@ -2425,7 +2476,7 @@ class Wav2Vec2ForCTCWithAdapterSwitching(Wav2Vec2PreTrainedModel):
 
         loss = None
         if labels is not None:
-            if labels.max() >= self.config.vocab_size:
+            if labels.max() >= self.config.vocab_size_1 + self.config.vocab_size_2:
                 raise ValueError(f"Label values must be <= vocab_size: {self.config.vocab_size}")
 
             # retrieve loss input_lengths from attention_mask
@@ -2461,7 +2512,6 @@ class Wav2Vec2ForCTCWithAdapterSwitching(Wav2Vec2PreTrainedModel):
         return CausalLMOutput(
             loss=loss, logits=logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions
         )
-
 
 
 @add_start_docstrings(

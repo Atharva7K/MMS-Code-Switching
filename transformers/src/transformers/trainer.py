@@ -2678,7 +2678,17 @@ class Trainer:
             labels = None
         outputs = model(**inputs)
         # print('===========', outputs.keys())
-        # outputs['logits'] = self.tokenizer.tokenizer.unrequired_tokens_mask * outputs['logits']
+        self.tokenizer.tokenizer.unrequired_tokens_mask = self.tokenizer.tokenizer.unrequired_tokens_mask.to(outputs['logits'].device)
+        
+        # print(self.tokenizer.tokenizer.unrequired_tokens_mask.device)
+        # print(outputs['logits'].device)
+
+        # print('output[logits] shape before- ', outputs['logits'].shape)
+        # print('mask shape - ', self.tokenizer.tokenizer.unrequired_tokens_mask.shape)
+
+        outputs['logits'] = self.tokenizer.tokenizer.unrequired_tokens_mask * outputs['logits']
+        # print('output[logits] shape after- ', outputs['logits'].shape)
+
         # print(outputs['logits'])
         # Save past state if it exists
         # TODO: this needs to be fixed and made cleaner later.

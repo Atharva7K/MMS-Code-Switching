@@ -256,23 +256,25 @@ class Wav2Vec2CTCTokenizer(PreTrainedTokenizer):
 
         vocab1 = self.vocab[target_lang_1]
         vocab2 = self.vocab[target_lang_2]
+        self.unrequired_tokens_mask = torch.ones(len(vocab1) + len(vocab2))
 
         merged = {}
 
         for k,v in vocab1.items():
             merged[k] = v
-
+        
         l = len(merged)
-        i = 0
-        for k in  vocab2:
-            if k not in merged:
-                merged[k] = i + l
-                i += 1
-
-        self.encoder = deepcopy(merged)
-
+        for k,v in vocab2.items():
+            if k in merged:
+                self.unrequired_tokens_mask[v+l] = 0
+            
+            else:
+                merged[k] = v + l
+        
+        self.encoder = merged
 
         self.decoder = {v:k for k,v in self.encoder.items()}
+
 
     @property
     def word_delimiter_token(self) -> str:
