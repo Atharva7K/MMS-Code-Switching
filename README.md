@@ -50,8 +50,8 @@ This also installs editable modified code for transformers from this repository.
 | Model                | ASCEND (MER / CER) | ESCWA (WER / CER) | MUCS (WER / CER) | 
 |----------------------|--------------------|--------------------|-------------------|
 | **MMS with single language adapter:** |           |            |                  |               
-| English              | 98.02 / 87.85   [Download](#)   | 92.73 / 71.14   [Download](#)    | 101.72 / 74.02  [Download](#)  |  
-| Matrix-language      | 71.98 / 66.76    [Download](#)  | 75.98 / 46.38   [Download](#)    | 58.05 / 49.20   [Download](#)  |  
+| English              | 98.02 / 87.85   | 92.73 / 71.14    | 101.72 / 74.02 |  
+| Matrix-language      | 71.98 / 66.76   | 75.98 / 46.38    | 58.05 / 49.20  |  
 | **Proposed models for fine-tuning:** |           |            |                  |               
 | Matrix-language-FT   | 45.97 / 44.13   [Download](#)   | 77.47 / 37.69   [Download](#)    | 66.19 / 41.10  [Download](#)   | 
 | Post Adapter Code Switching                 | 44.41 / 40.24   [Download](#)   | 75.50 / 46.69   [Download](#)    | 63.32 / 42.66   [Download](https://drive.google.com/file/d/1TjuIyugkKlW9_GiJU9vBV2SuLb-pRWfL/view?usp=drive_link)  | 
@@ -62,10 +62,10 @@ This also installs editable modified code for transformers from this repository.
 
 Run below script to generate transcripts
 
-Use branch `transformer-based-switching` for Transformer Based Switching and `code-switching` for Post Adapter Swtiching. Ex:-
+Use `main` for Transformer Based Switching and `post-adapter-switching` for Post Adapter Swtiching. Ex:-
 
 ```bash
-git checkout code-switching
+git checkout main
 ```
 ```bash
 python inference.py --test_metadata_csv_path "/l/users/speech_lab/CodeSwitchedDataset[code_switched_dataset]/ASCEND/test_metadata.csv" --target_lang_1 eng --target_lang_2 cmn-script_simplified --prefix_path "/l/users/speech_lab/CodeSwitchedDataset[code_switched_dataset]/ASCEND/" --checkpoint_path "/l/users/speech_lab/AtharvaK/MMS-Adpter-Switching/checkpoints/mms_out_transformer_code_switcher/checkpoint-33200"  --batch_size 32
