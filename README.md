@@ -60,16 +60,16 @@ This also installs editable modified code for transformers from this repository.
 
 #### Do inference
 
-Run below script to generate transcripts
-
-Use `main` for Transformer Based Switching and `post-adapter-switching` for Post Adapter Swtiching. Ex:-
+Use `main` branch for Transformer Based Switching and `post-adapter-switching` branch for Post Adapter Swtiching. Ex:-
 
 ```bash
 git checkout main
 ```
 ```bash
-python inference.py --test_metadata_csv_path "/l/users/speech_lab/CodeSwitchedDataset[code_switched_dataset]/ASCEND/test_metadata.csv" --target_lang_1 eng --target_lang_2 cmn-script_simplified --prefix_path "/l/users/speech_lab/CodeSwitchedDataset[code_switched_dataset]/ASCEND/" --checkpoint_path "/l/users/speech_lab/AtharvaK/MMS-Adpter-Switching/checkpoints/mms_out_transformer_code_switcher/checkpoint-33200"  --batch_size 32
+python inference.py --test_metadata_csv_path "sample_audio_mucs/metadata.csb" --target_lang_1 eng --target_lang_2 hin --prefix_path "" --checkpoint_path "checkpoints/pytorch_model.bin"  --batch_size 32
 ```
+
+Example for all of these steps can be found in the demo notebook.
 
 #### Output transcripts
 

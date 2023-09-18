@@ -1,6 +1,3 @@
-"""
-srun --ntasks=1 --cpus-per-task=4 -p gpu -q gpu-8 --mem=20G --gres=gpu:1 python train_mms.py --train_metadata_csv_path "/l/users/speech_lab/CodeSwitchedDataset[code_switched_dataset]/ASCEND/train_metadata.csv" --test_metadata_csv_path "/l/users/speech_lab/CodeSwitchedDataset[code_switched_dataset]/ASCEND/test_metadata.csv" --target_lang_1 eng --target_lang_2 cmn-script_simplified
-"""
 
 print('Loading Dependancies..')
 import os
@@ -33,21 +30,6 @@ from jiwer import wer, cer
 from evaluate import load
 import time
 
-def check_adapters_loaded_correctly(model, lang1, lang2):
-    adapter1 = load_file(f'/home/atharva.kulkarni/.cache/huggingface/hub/models--facebook--mms-1b-all/snapshots/3d33597edbdaaba14a8e858e2c8caa76e3cec0cd/adapter.{lang1}.safetensors')
-    adapter2 = load_file(f'/home/atharva.kulkarni/.cache/huggingface/hub/models--facebook--mms-1b-all/snapshots/3d33597edbdaaba14a8e858e2c8caa76e3cec0cd/adapter.{lang2}.safetensors')
-    
-    for k,v in model.state_dict().items():
-        if 'adapter_layer_1' in k:
-            t1 = v
-            t2 = adapter1[k.replace('adapter_layer_1', 'adapter_layer')]
-            assert torch.equal(t1, t2)
-        if 'adapter_layer_2' in k:
-            t1 = v
-            t2 = adapter2[k.replace('adapter_layer_2', 'adapter_layer')]
-            assert torch.equal(t1, t2)
-
-
 def tokenize_for_mer(text):
     tokens = list(filter(lambda tok: len(tok.strip()) > 0, jieba.lcut(text)))
     tokens = [[tok] if tok.isascii() else list(tok) for tok in tokens]
@@ -56,7 +38,6 @@ def tokenize_for_mer(text):
 def tokenize_for_cer(text):
     tokens = list(filter(lambda tok: len(tok.strip()) > 0, list(text)))
     return tokens
-
 
 def compute_metrics(pred):
     pred_logits = pred.predictions
@@ -157,26 +138,13 @@ def main():
     parser.add_argument('--test_metadata_csv_path', default=None)
     parser.add_argument('--target_lang_1', required=True)
     parser.add_argument('--target_lang_2', required=True)
-    parser.add_argument('--trial_run')    
     parser.add_argument('--prefix_path', required=True)
     parser.add_argument('--checkpoint_path', required=False)
     parser.add_argument('--outfile_path', required=False)
     parser.add_argument('--batch_size', required=True, type=int)
     args = parser.parse_args()
 
-
-    print('Loading Datasets...')
-
-    try:
-        if args.trial_run:
-            df_test = pd.read_csv(args.test_metadata_csv_path, usecols=['file_name', 'transcription'], sep="|").head(args.batch_size)
-        else:
-            df_test = pd.read_csv(args.test_metadata_csv_path, usecols=['file_name', 'transcription'], sep="|")
-    except:
-        if args.trial_run:
-            df_test = pd.read_csv(args.test_metadata_csv_path, usecols=['file_name', 'transcription']).head(args.batch_size)
-        else:
-            df_test = pd.read_csv(args.test_metadata_csv_path, usecols=['file_name', 'transcription'])
+    df_test = pd.read_csv(args.test_metadata_csv_path, usecols=['file_name', 'transcription'])
 
     prefix_path = args.prefix_path
 
@@ -194,8 +162,7 @@ def main():
     data_collator = DataCollatorCTCWithPadding(processor=processor, padding=True)
 
     model = Wav2Vec2ForCTCWithAdapterSwitching.from_pretrained(
-        "facebook/mms-1b-all",
-        config = 'post_adapter',
+        args.checkpoint_path,
         attention_dropout=0.0,
         hidden_dropout=0.0,
         feat_proj_dropout=0.0,
@@ -211,8 +178,6 @@ def main():
 
     print(model)
 
-    check_adapters_loaded_correctly(model, args.target_lang_1, args.target_lang_2)
-    print('Checked adapter loading')
             
     print('Setting up training..')
     training_args = TrainingArguments(
