@@ -932,7 +932,6 @@ class Wav2Vec2EncoderLayerStableLayerNormForCodeSwitching(nn.Module):
 
             if self.adapter_switching_type == 'pre':
                 use_adapter_1 = self.code_switcher(hidden_states)
-                # print('use_adapter_1', use_adapter_1, use_adapter_1.shape)
                 if use_adapter_1:
                     hidden_states = hidden_states + self.adapter_layer_1(hidden_states)
                 else:
@@ -1684,30 +1683,19 @@ class Wav2Vec2PreTrainedModel(PreTrainedModel):
         actual_vocab_size_1 = state_dict_1["lm_head.weight"].shape[0]
         actual_vocab_size_2 = state_dict_2["lm_head.weight"].shape[0]
         
-        # print(f'vocab sizes : {actual_vocab_size_1} {actual_vocab_size_2}')
 
         if actual_vocab_size_1 != self.config.vocab_size_1 or actual_vocab_size_2 != self.config.vocab_size_2:
-            # print(f'vocab sizes inside load adapters {actual_vocab_size_1}, {actual_vocab_size_2}')
             self.config.vocab_size_1 = actual_vocab_size_1
             self.config.vocab_size_2 = actual_vocab_size_2
 
         if self.lm_head.weight.shape[0] != actual_vocab_size_1 + actual_vocab_size_2:
-            # print('yooooooo')
             self.lm_head = nn.Linear(self.config.output_hidden_size, actual_vocab_size_1 + actual_vocab_size_2)
 
         state_dict_1 = {k.replace('adapter_layer', 'adapter_layer_1') : v for k,v in state_dict_1.items()}
         state_dict_2 = {k.replace('adapter_layer', 'adapter_layer_2') : v for k,v in state_dict_2.items()}
-        # state_dict_lm_head = 
-        # state_dict_1 = {k.replace('lm_head', 'lm_head_1') : v for k,v in state_dict_1.items()}
-        # state_dict_2 = {k.replace('lm_head', 'lm_head_2') : v for k,v in state_dict_2.items()}
 
 
         adapter_weights_1, adapter_weights_2, lm_head_weights  = self._get_code_switched_adapters()
-        # for i in adapter_weights_1.keys():
-        #     print(i)
-        # print('==================')
-        # for i in state_dict_1.keys():
-        #     print(i)
         unexpected_keys_1 = set(state_dict_1.keys()) - set(adapter_weights_1.keys()) - set(lm_head_weights.keys())
         unexpected_keys_2 = set(state_dict_2.keys()) - set(adapter_weights_2.keys()) - set(lm_head_weights.keys())
         missing_keys_1 = set(adapter_weights_1.keys()) - set(state_dict_1.keys()) - set(lm_head_weights.keys())
@@ -2387,10 +2375,7 @@ class Wav2Vec2ForCTCWithAdapterSwitching(Wav2Vec2PreTrainedModel):
         output_hidden_size = (
             config.output_hidden_size if hasattr(config, "do_adapter_switching") and config.do_adapter_switching else config.hidden_size
         )
-        # print(f'vocab sizes====== {config.vocab_size_1}, {config.vocab_size_2}')
         self.lm_head = nn.Linear(output_hidden_size, config.vocab_size_2 + config.vocab_size_1)
-        # Initialize weights and apply final processing
-        # print('lm_head shape', self.lm_head.weight.shape)
         self.post_init()
 
     def tie_weights(self):
@@ -2401,7 +2386,7 @@ class Wav2Vec2ForCTCWithAdapterSwitching(Wav2Vec2PreTrainedModel):
         This method is **not** supposed to be called by the user and is prone to be changed in the future.
         """
 
-        self.load_adapters_for_code_switching(self.target_lang_1, self.target_lang_2, force_load=True)
+        self.load_adapters_for_code_switching(self.target_lang_1, self.target_lang_2, force_load=True, use_safetensors=True)
 
     def freeze_feature_extractor(self):
         """
