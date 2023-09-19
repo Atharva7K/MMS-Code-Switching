@@ -154,7 +154,7 @@ def main():
     
     print('Loading Model and Processor..')
     global processor
-    processor = AutoProcessor.from_pretrained(args.checkpoint_path)
+    processor = AutoProcessor.from_pretrained('facebook/mms-1b-all')
     processor.tokenizer.set_code_switched_target_langs(args.target_lang_1, args.target_lang_2)
     
     test_data = test_data.map(prepare_dataset, remove_columns=['audio', 'transcripts'], num_proc=8)
@@ -171,6 +171,7 @@ def main():
         pad_token_id=processor.tokenizer.pad_token_id,
         vocab_size=len(processor.tokenizer),
         ignore_mismatched_sizes=True,
+        use_safetensors=True
     )
 
     model.load_adapters_for_code_switching(args.target_lang_1, args.target_lang_2)
