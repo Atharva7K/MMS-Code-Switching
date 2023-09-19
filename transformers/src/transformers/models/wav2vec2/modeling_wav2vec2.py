@@ -2336,10 +2336,7 @@ class Wav2Vec2ForCTCWithAdapterSwitching(Wav2Vec2PreTrainedModel):
         output_hidden_size = (
             config.output_hidden_size if hasattr(config, "do_adapter_switching") and config.do_adapter_switching else config.hidden_size
         )
-        print(f'vocab size ===== {config.vocab_size}')
         self.lm_head = nn.Linear(output_hidden_size, config.vocab_size)
-        # Initialize weights and apply final processing
-        # print('lm_head shape', self.lm_head.weight.shape)
         self.post_init()
 
     def tie_weights(self):
