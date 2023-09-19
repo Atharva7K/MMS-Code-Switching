@@ -55,7 +55,7 @@ This also installs editable modified code for transformers from this repository.
 | **Proposed models for fine-tuning:** |           |            |                  |               
 | Matrix-language-FT   | 45.97 / 44.13   [Download](https://zenodo.org/api/files/df69f0da-8c98-4f13-ac9b-b5469bee6928/ascend_finetuned_pytorch_model.bin)   | 77.47 / 37.69   [Download](https://zenodo.org/api/files/df69f0da-8c98-4f13-ac9b-b5469bee6928/qasr_finetuned_pytorch_model.bin)    | 66.19 / 41.10  [Download](https://zenodo.org/api/files/df69f0da-8c98-4f13-ac9b-b5469bee6928/mucs_finetuned_pytorch_model.bin)   | 
 | Post Adapter Code Switching                 | 44.41 / 40.24   [Download](https://zenodo.org/api/files/df69f0da-8c98-4f13-ac9b-b5469bee6928/pacs_ascend_pytorch_model.bin)   | 75.50 / 46.69   [Download](#)    | 63.32 / 42.66   [Download](https://drive.google.com/file/d/1TjuIyugkKlW9_GiJU9vBV2SuLb-pRWfL/view?usp=drive_link)  | 
-| Transformer Code Switching                  | 41.07 / 37.89   [Download](https://drive.google.com/file/d/1LzKnsYXvE1vImZj7TWkTGAxKJqBnMPN1/view?usp=drive_link)   | 74.42 / 35.54   [Download](https://drive.google.com/file/d/1hE9Cy3qo5XbEE3p1Lr1i3sTgfD6muGKp/view?usp=drive_link)    | 57.95 / 38.26  [Download](https://drive.google.com/file/d/1LzKnsYXvE1vImZj7TWkTGAxKJqBnMPN1/view?usp=drive_link)   | 
+| Transformer Code Switching                  | 41.07 / 37.89   [Download](https://drive.google.com/file/d/1LzKnsYXvE1vImZj7TWkTGAxKJqBnMPN1/view?usp=drive_link)   | 74.42 / 35.54   [Download](https://drive.google.com/file/d/1hE9Cy3qo5XbEE3p1Lr1i3sTgfD6muGKp/view?usp=drive_link)    | 57.95 / 38.26  [Download](https://drive.google.com/file/d/1qs9cWSzNtFpA3Grqu_YoQl0c1uj1WvyI/view?usp=drive_link)   | 
 
 
 #### Do inference
