@@ -1,6 +1,6 @@
 # ADAPTING THE ADAPTERS FOR CODE-SWITCHING IN MULTILINGUAL ASR
 
-## Improving performance of [Meta AI's MMS](https://arxiv.org/abs/2305.13516) in code-स्विचिंग.
+## Improving performance of [Meta AI's MMS](https://arxiv.org/abs/2305.13516) in code-switching.
 *Atharva Kulkarni, Ajinkya Kulkarni, Miguel Couceiro, Hanan Aldarmaki*
 
 ### **ABSTRACT**
@@ -26,13 +26,34 @@ Hindi languages paired with English, showing consistent im-
 provements in code-switching performance with at least 10%
 absolute reduction in CER across all test sets.
 
+
+
+### Brief description of our approaches
+We modify the Wav2Vec2 transformer blocks used in MMS to use 2 pretrained adapter modules corresponding to the matrix and embedded languages to incorporate information from both. Based on this modification, we propose two code-switching approaches:
+
+![image](https://github.com/Atharva7K/Multilingual-Chat-Room/assets/61614635/21e65a38-04b2-47e6-986b-1ee6487f8ab7)
+
+
+#### 1) Post Adapter Switching
+We add a Post-Adapyter-Code-Switcher network (PACS) inside every transformer block after the 2 adapter modules (see Figure 1a) . Output from the adapter modules is concatenated and fed to PACS which learns to assimilate information from both. The base model and the 2 pretrained adapter modules are kept frozen during the training hence only PACS and the output layer is trainable. PACS follows the same architectures as the adapter modules used in MMS: two feedforward layers with a LayerNorm layer and a linear
+projection to 16 dimensions with ReLU activation
+
+#### 2) Transformer Code Switching
+We use a transformer network with sigmoid  as output activation as a Transformer Code Switcher (TCS). It learns to predict a code-switch-sequence O <sub>CS</sub> using output of the Wav2Vec2 Feature Projection block (Figure 1b). The code-switch-sequence is a latent binary sequence that helps to identify code-switching boundaries at frame level. It regulates the flow of information from two adapters to enable the network to handle code-switched speech by dynamically masking out one of the languages as per the switching equation :
+
+![image](https://github.com/Atharva7K/Multilingual-Chat-Room/assets/61614635/39e58c62-e346-45b5-81fc-a53a236fd791)
+
+We use  a threshold value of 0.5 to the output of the sigmoid activation to create binarized latent codes O <sub>CS</sub>. The base model and adapter are kept frozen, only TCS and the output layers are trained on code-switched data.
+
+### Usage 
+
 ### Installation
 Clone this repository 
 
 ```bash
 git clone https://github.com/Atharva7K/MMS-Code-Switching
 ```
-NOTE: This repo includes the entire codebase of [hugging face transformers](https://github.com/huggingface/transformers). We write our modifications on top of their codebase. Most of our modified code is in [this file](https://github.com/Atharva7K/MMS-Code-Switching/transformers/models/wav2vec2/modeling_wav2vec2.py). 
+NOTE: This repo includes the entire codebase of [hugging face transformers](https://github.com/huggingface/transformers). We write our modifications on top of their codebase. Most of our modified code is in [this file](https://github.com/Atharva7K/MMS-Code-Switching/blob/post-adapter-switching/transformers/src/transformers/models/wav2vec2/modeling_wav2vec2.py#L2358). 
 
 #### Install dependancies
 
@@ -69,7 +90,7 @@ We also provide MMS checkpoints after finetuning matrix-language adapters on the
 
 #### Do inference
 
-Use `main` branch for Transformer Code Switching (TCS) and `post-adapter-switching` branch for Post Adapter Code Swtiching (TACS). Ex:-
+Use `main` branch for Transformer Code Switching (TCS) and `post-adapter-switching` branch for Post Adapter Code Swtiching (PACS).
 
 Check `demo.ipynb` for inference demo.
 
